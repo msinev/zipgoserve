@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,7 +18,7 @@ type ZipFileServer struct {
 	IndexSuffix string
 	PATHprefix  string // html/
 	Mime        []MIMEMap
-	// zip sync.Lock // Looks like zip is concurrent read safe - locking removed
+	ziplock     *sync.Mutex // Looks like zip is concurrent read safe - locking removed
 }
 
 type MIMEMap struct {
@@ -89,7 +90,7 @@ func isDeflateAllowed(r *http.Request) bool {
 	return false
 }
 
-func MapFile(mux *http.ServeMux, mime string, url string, file *zip.File, fm time.Time) bool {
+func (zf *ZipFileServer) MapFile(mux *http.ServeMux, mime string, url string, file *zip.File, fm time.Time) bool {
 	lm := fm.Format(http.TimeFormat)
 	log.Printf("Mapping file %s to URL %s as %s (compression %d)", file.Name, url, mime, file.Method)
 	if file.Method != 0 {
@@ -100,6 +101,10 @@ func MapFile(mux *http.ServeMux, mime string, url string, file *zip.File, fm tim
 					w.WriteHeader(http.StatusNotModified)
 					return
 				}
+			}
+			if zf.ziplock != nil {
+				zf.ziplock.Lock()
+				defer zf.ziplock.Unlock()
 			}
 			//if r.Header.Get()
 			if isDeflateAllowed(r) {
@@ -140,6 +145,11 @@ func MapFile(mux *http.ServeMux, mime string, url string, file *zip.File, fm tim
 				}
 			}
 			{
+				if zf.ziplock != nil {
+					zf.ziplock.Lock()
+					defer zf.ziplock.Unlock()
+				}
+
 				rdf, err := file.Open()
 				if err != nil {
 					w.WriteHeader(http.StatusInternalServerError)
@@ -168,9 +178,9 @@ func (zf *ZipFileServer) MapFiles(mux *http.ServeMux) error {
 					URL := zf.HTTPprefix + f.Name[len(zf.PATHprefix):]
 					if strings.HasSuffix(URL, zf.IndexSuffix) {
 						URLi := URL[:len(URL)-len(zf.IndexSuffix)]
-						mmOK = MapFile(mux, mm.MIME, URLi, f, f.Modified)
+						mmOK = zf.MapFile(mux, mm.MIME, URLi, f, f.Modified)
 					}
-					mmOK = (MapFile(mux, mm.MIME, URL, f, f.Modified) || mmOK)
+					mmOK = (zf.MapFile(mux, mm.MIME, URL, f, f.Modified) || mmOK)
 					break
 				}
 			}
