@@ -29,5 +29,5 @@ Shortest transaction:	        0.00
  - Benchmark results  ✔
  - Preload small files to bytes slice (performance optimisation)  ✔
  - ZIP file as example
- - Dockerisation example
+ - Dockerization example
  - JSON mime maping example
