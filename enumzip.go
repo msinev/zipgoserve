@@ -17,7 +17,7 @@ type ZipFileServer struct {
 	PATHprefix       string // html/
 	CachingThreshold int64
 	Mime             []MIMEMap
-	ziplock          *sync.Mutex // Looks like zip is concurrent read safe - locking removed
+	Locker           *sync.Mutex // Looks like zip is concurrent read safe - locking removed
 }
 
 type MIMEMap struct {
@@ -53,6 +53,10 @@ func (zf *ZipFileServer) AttachFile(fn string) {
 		log.Fatal(err)
 		panic(err)
 	}
+}
+
+func (zf *ZipFileServer) Close() error {
+	return zf.r.Close()
 }
 
 func (zf *ZipFileServer) ParseJSONMIME() error {

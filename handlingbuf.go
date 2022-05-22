@@ -30,14 +30,14 @@ func (zf *ZipFileServer) GetHandlingMemFunction(mime string, file *zip.File, fm 
 		return func(w http.ResponseWriter, r *http.Request) {
 			if ifModSince, err := http.ParseTime(r.Header.Get("if-modified-since")); err == nil {
 				if !fm.IsZero() && fm.Before(ifModSince) {
-					log.Printf("Relpy unchanged >> %s", file.Name)
+					//log.Printf("Relpy unchanged >> %s", file.Name)
 					w.WriteHeader(http.StatusNotModified)
 					return
 				}
 			}
 			//if r.Header.Get()
 			if isDeflateAllowed(r) {
-				log.Printf("Relpy compressed >> %s", file.Name)
+				//log.Printf("Relpy compressed >> %s", file.Name)
 				w.Header().Set("Last-Modified", lm)
 				r.Header.Add("Content-Length", strconv.Itoa(int(file.CompressedSize64)))
 				w.Header().Set("Content-Type", mime)

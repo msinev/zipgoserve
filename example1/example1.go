@@ -4,14 +4,17 @@ import (
 	"github.com/msinev/zipgoserve"
 	"net/http"
 	"os"
+	"sync"
 )
 
 func main() {
 	zf := &zipgoserve.ZipFileServer{
-		HTTPprefix:  "/",
-		IndexSuffix: "index.html",
-		PATHprefix:  "html/",
-		Mime:        zipgoserve.HardcodedMap(),
+		HTTPprefix:       "/",
+		IndexSuffix:      "index.html",
+		PATHprefix:       "html/",
+		Mime:             zipgoserve.HardcodedMap(),
+		CachingThreshold: 1024,
+		Locker:           &sync.Mutex{},
 	}
 
 	if len(os.Args) != 3 {
