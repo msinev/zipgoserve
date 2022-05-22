@@ -6,19 +6,18 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 type ZipFileServer struct {
-	r           *zip.ReadCloser
-	HTTPprefix  string
-	IndexSuffix string
-	PATHprefix  string // html/
-	Mime        []MIMEMap
-	ziplock     *sync.Mutex // Looks like zip is concurrent read safe - locking removed
+	r                *zip.ReadCloser
+	HTTPprefix       string
+	IndexSuffix      string
+	PATHprefix       string // html/
+	CachingThreshold int64
+	Mime             []MIMEMap
+	ziplock          *sync.Mutex // Looks like zip is concurrent read safe - locking removed
 }
 
 type MIMEMap struct {
@@ -90,84 +89,7 @@ func isDeflateAllowed(r *http.Request) bool {
 	return false
 }
 
-func (zf *ZipFileServer) MapFile(mux *http.ServeMux, mime string, url string, file *zip.File, fm time.Time) bool {
-	lm := fm.Format(http.TimeFormat)
-	log.Printf("Mapping file %s to URL %s as %s (compression %d)", file.Name, url, mime, file.Method)
-	if file.Method != 0 {
-		mux.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
-			if ifModSince, err := http.ParseTime(r.Header.Get("if-modified-since")); err == nil {
-				if !fm.IsZero() && fm.Before(ifModSince) {
-					log.Printf("Relpy unchanged > %s", url)
-					w.WriteHeader(http.StatusNotModified)
-					return
-				}
-			}
-			if zf.ziplock != nil {
-				zf.ziplock.Lock()
-				defer zf.ziplock.Unlock()
-			}
-			//if r.Header.Get()
-			if isDeflateAllowed(r) {
-				rdf, err := file.OpenRaw()
-				if err != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-				log.Printf("Relpy compressed > %s", url)
-				w.Header().Set("Last-Modified", lm)
-				r.Header.Add("Content-Length", strconv.Itoa(int(file.CompressedSize64)))
-				w.Header().Set("Content-Type", mime)
-				w.Header().Set("Content-Encoding", "deflate")
-				io.Copy(w, rdf)
-			} else {
-				rdf, err := file.Open()
-				if err != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-				log.Printf("Relpy uncompressed > %s", url)
-				w.Header().Set("Last-Modified", lm)
-				r.Header.Add("Content-Length", strconv.Itoa(int(file.UncompressedSize64)))
-				w.Header().Set("Content-Type", mime)
-				io.Copy(w, rdf)
-				rdf.Close()
-			}
-
-		})
-
-	} else {
-		mux.HandleFunc(url, func(w http.ResponseWriter, r *http.Request) {
-			if ifModSince, err := http.ParseTime(r.Header.Get("if-modified-since")); err == nil {
-				if !fm.IsZero() && fm.Before(ifModSince) {
-					log.Printf("Relpy unchanged  %s", url)
-					w.WriteHeader(http.StatusNotModified)
-					return
-				}
-			}
-			{
-				if zf.ziplock != nil {
-					zf.ziplock.Lock()
-					defer zf.ziplock.Unlock()
-				}
-
-				rdf, err := file.Open()
-				if err != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-				log.Printf("Relpy uncompressed  %s", url)
-				w.Header().Set("Last-Modified", lm)
-				r.Header.Add("Content-Length", strconv.Itoa(int(file.UncompressedSize64)))
-				w.Header().Set("Content-Type", mime)
-				io.Copy(w, rdf)
-				rdf.Close()
-			}
-
-		})
-
-	}
-	return true
-}
+const deflateMethod = 8
 
 func (zf *ZipFileServer) MapFiles(mux *http.ServeMux) error {
 	for _, f := range zf.r.File {
@@ -176,11 +98,14 @@ func (zf *ZipFileServer) MapFiles(mux *http.ServeMux) error {
 			for _, mm := range zf.Mime {
 				if strings.HasSuffix(f.Name, mm.Suffix) {
 					URL := zf.HTTPprefix + f.Name[len(zf.PATHprefix):]
+					log.Printf("Mapping file %s to URL %s as %s (compression %d)", f.Name, URL, mm.MIME, f.Method)
+					fMap := zf.GetHandlingFunction(mm.MIME, f, f.Modified)
+					mux.HandleFunc(URL, fMap)
 					if strings.HasSuffix(URL, zf.IndexSuffix) {
 						URLi := URL[:len(URL)-len(zf.IndexSuffix)]
-						mmOK = zf.MapFile(mux, mm.MIME, URLi, f, f.Modified)
+						mux.HandleFunc(URLi, fMap)
 					}
-					mmOK = (zf.MapFile(mux, mm.MIME, URL, f, f.Modified) || mmOK)
+					mmOK = true
 					break
 				}
 			}
