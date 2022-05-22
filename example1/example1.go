@@ -7,11 +7,11 @@ import (
 )
 
 func main() {
-	zf := &zipserver.ZipFileServer{
+	zf := &zipgoserve.ZipFileServer{
 		HTTPprefix:  "/",
 		IndexSuffix: "index.html",
 		PATHprefix:  "html/",
-		Mime:        zipserver.HardcodedMap(),
+		Mime:        zipgoserve.HardcodedMap(),
 	}
 
 	if len(os.Args) != 3 {
